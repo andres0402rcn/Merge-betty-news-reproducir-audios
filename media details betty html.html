@@ -1,0 +1,220 @@
+<div *ngIf="isLoggedIn && canAccessBetty">
+  <header>
+    <h4 class="mb-3"><span class="k-icon k-i-video-external"></span> Material disponible</h4>
+    <hr class="mb-3">
+  </header>
+
+  <kendo-splitter orientation="horizontal" style="height: calc(100vh - 200px);">
+    <kendo-splitter-pane [collapsible]="true" [(size)]="gridPaneSize">
+      <div class="pane-content" style="padding: 8px; height: 100%;">
+        <form class="needs-validation" novalidate="" style="height: 100%;">
+          <kendo-grid [data]="gridData" [pageSize]="state.take" [skip]="state.skip" [filter]="state.filter"
+            [pageable]="true" [resizable]="true" [sort]="state.sort" [sortable]="true" [filterable]="true"
+            style="height: 100%;" [loading]="loading" (dataStateChange)="grid_dataStateChange($event)"
+            [rowClass]="rowCallback">
+            <kendo-grid-messages pagerPage="Página" pagerOf="de" pagerItems="ítems" pagerItemsPerPage="ítems por página"
+              filterClearButton="Limpiar" filterSubmitButton="Aplicar" sortAscending="Ordenar ascendente"
+              sortDescending="Ordenar descendente" noRecords="No hay registros disponibles" loading="Cargando..."
+              loading="Cargando..." filterIsTrue="Es verdadero" filterIsFalse="Es falso" filterEqOperator="Es igual a"
+              filterNotEqOperator="No es igual a" filterStartsWithOperator="Comienza con"
+              filterContainsOperator="Contiene" filterNotContainsOperator="No contiene"
+              filterEndsWithOperator="Termina con" filterGteOperator="Mayor o igual que" filterGtOperator="Mayor que"
+              filterLteOperator="Menor o igual que" filterLtOperator="Menor que" filterIsNullOperator="Es nulo"
+              filterIsNotNullOperator="No es nulo" filterIsEmptyOperator="Está vacío"
+              filterIsNotEmptyOperator="No está vacío" filterBooleanAll="(Todos)"
+              filterAfterOrEqualOperator="Es posterior o igual a" filterAfterOperator="Es posterior a"
+              filterBeforeOperator="Es anterior a" filterBeforeOrEqualOperator="Es anterior o igual a"
+              filterFilterButton="Filtrar" filterCheckAll="Seleccionar todo" filterSubmitButton="Filtrar"
+              filterClearButton="Limpiar" filterAndLogic="Y" filterOrLogic="O">
+            </kendo-grid-messages>
+            <ng-template kendoGridToolbarTemplate>
+              <span> </span>
+              <button type="button" kendoButton icon="rotate" (click)="btnReload_onclick()">Actualizar</button>
+              <kendo-buttongroup selection="single">
+                <button kendoButton [toggleable]="true" [icon]="'file-video'" title="Material"
+                  (click)="filterVideoFiles()">Videos</button>
+                <button kendoButton [toggleable]="true" [icon]="'audio'" title="Audio/Voz"
+                  (click)="filterAudioFiles()">Audio/Voz</button>
+              </kendo-buttongroup>
+            </ng-template>
+            <kendo-grid-column media="sm" [width]="50" [hidden]="!voiceover" class="col-no-padding">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                <div class="drag-wrapper" draggable="true" (dragstart)="onDragStart($event, dataItem)"
+                  (dragend)="onDragEnd($event)">
+                  <div class="drag-handle">⋮⋮</div>
+                </div>
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="typeSourceName" title="Fuente" media="sm" [width]="105">
+              <ng-template kendoGridFilterCellTemplate let-filter let-column="column">
+                <kendo-combobox #comboSource [data]="sourcesList" [filterable]="true" textField="text"
+                  valueField="value" [value]="selectedUserCombo" placeholder="Seleccionar fuente..."
+                  [clearButton]="true" (valueChange)="onSourceFilterChange($event, filter)" style="width: 100%;">
+                </kendo-combobox>
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="title" title="Título material" media="sm" [width]="220">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                <div class="wrap-text">{{ dataItem.title }}</div>
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="newsName" title="Noticia" media="sm" [width]="220">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                <div class="wrap-text">{{ dataItem.newsName }}</div>
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="creationUsername" title="Usuario solicitante" media="sm" [width]="160">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                {{ dataItem.creationUsername }} - {{ dataItem.creationRealName }}
+              </ng-template>
+              <ng-template kendoGridFilterCellTemplate let-filter let-column="column">
+                <kendo-combobox #comboUser [data]="usersList" [filterable]="true" textField="text" valueField="value"
+                  [value]="selectedUserCombo" placeholder="Seleccionar usuario..." [clearButton]="true"
+                  (valueChange)="onUserFilterChange($event, filter)" style="width: 100%;">
+                </kendo-combobox>
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="datetimeCreation" title="Fecha" media="sm" [width]="222">
+              <ng-template kendoGridFilterCellTemplate let-filter let-column="column">
+                <div class="k-filter-cell"
+                  style="display: flex; flex-direction: column; align-items: center; padding: 4px; gap: 4px;  margin-right: 10px;">
+                  <div class="filter-container">
+                    <label class="k-label">Desde:</label>
+                    <kendo-datepicker #dateFromPicker [max]="maxDateFrom" [focusedDate]="focusedDateFrom"
+                      [value]="dateFromValue" (valueChange)="filterFromDate($event)" format="dd/MM/yyyy"
+                      placeholder="día/mes/año" style="width: 70%; margin-left: 10px;">
+                    </kendo-datepicker>
+                    <button kendoButton icon="times" fillMode="flat" (click)="clearFromDate()" class="clear-btn"
+                      title="Limpiar fecha" style="margin-right: 10px;">
+                    </button>
+                  </div>
+                  <div class="filter-container">
+                    <label class="k-label">Hasta:&nbsp;</label>
+                    <kendo-datepicker #dateToPicker [min]="minDateTo" [value]="dateToValue"
+                      (valueChange)="filterToDate($event)" format="dd/MM/yyyy" placeholder="día/mes/año"
+                      style="width: 70%; margin-left: 10px;">
+                    </kendo-datepicker>
+                    <button kendoButton icon="times" fillMode="flat" (click)="clearToDate()" class="clear-btn"
+                      title="Limpiar fecha">
+                    </button>
+                  </div>
+                </div>
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="durationSeconds" title="Duración" [style]="{'text-align': 'right'}"
+              [filterable]="false" [width]="90">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                {{ formatDuration(dataItem.durationSeconds) }}
+              </ng-template>
+            </kendo-grid-column>
+            <kendo-grid-column field="typeAssetStatusName" title="Estado procesamiento" media="sm"
+              [hidden]="true"></kendo-grid-column>
+            <kendo-grid-column title="" [width]="135" media="sm" [hidden]="voiceover">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                <button (click)="confirmGenerateProxy(dataItem)" *ngIf="(dataItem.typeAssetId != 1 && dataItem.typeAssetStatusId === 3) || 
+                  (dataItem.typeAssetId === 1 && dataItem.typeAssetStatusId === 5)"
+                  [disabled]="dataItem.autoTranscode === true"
+                  [ngStyle]="{ 'background-color': dataItem.autoTranscode === true ? 'DarkOrange' : '' }"
+                  class="btn-grid btn-sm generate-button" kendoButton title="Generar video">
+                  <img src="assets/img/generate-video.png" width="21" height="20" class="icon-button">
+                </button>
+                <button (click)="btnPlayVideo_onclick(dataItem)"
+                  *ngIf="dataItem.typeAssetId === 1 && isPlayableStatus(dataItem.typeAssetStatusId)"
+                  class="btn-grid btn-sm video-button" kendoButton icon="video-external" alt="Reproducir video"
+                  title="Reproducir video">
+                </button>
+                <button (click)="setVideoPrivacy(dataItem, 'public')"
+                  *ngIf="dataItem.isPrivate && dataItem.creationUsername === user.username"
+                  class="btn-grid btn-sm download-button btn-public" kendoButton title="Video privado">
+                  <img src="assets/img/bloquear.png" width="16" height="16" class="icon-button">
+                </button>
+                <button (click)="setVideoPrivacy(dataItem, 'private')"
+                  *ngIf="!dataItem.isPrivate && dataItem.creationUsername === user.username"
+                  class="btn-grid btn-sm download-button btn-private" kendoButton title="Video publico">
+                  <img src="assets/img/candado-abierto.png" width="16" height="16" class="icon-button">
+                </button>
+                <button (click)="downloadFile(dataItem.transcriptionId, dataItem.transcriptionPath)"
+                  *ngIf="dataItem.transcriptionPath" class="btn-grid btn-sm download-button" kendoButton
+                  title="Descargar transcripción">
+                  <img src="assets/img/microphone.png" width="16" height="16" class="icon-button">
+                </button>
+                <button (click)="downloadFile(dataItem.articleAnthropicId, dataItem.articleAnthropicPath)"
+                  *ngIf="dataItem.articleAnthropicPath" class="btn-grid btn-sm download-button" kendoButton
+                  icon="file-txt" title="Descargar artículo">
+                </button>
+                <button (click)="ProcessAI(dataItem)" *ngIf="isEligibleForAI(dataItem)"
+                  [ngStyle]="{'background-color': dataItem.processAI ? 'DarkOrange' : ''}"
+                  [disabled]="dataItem.processAI" class="btn-grid btn-sm download-button" kendoButton
+                  title="Procesar con IA">
+                  <img src="assets/img/bot.png" width="21" height="20" class="icon-button">
+                </button>
+              </ng-template>
+            </kendo-grid-column>
+             <kendo-grid-column title="" [width]="135" media="sm" [hidden]="!voiceover">
+              <ng-template kendoGridCellTemplate let-dataItem>
+                <button class="btn-grid btn-sm video-button" kendoButton
+                         [icon]="dataItem.isPlaying ? 'pause' : 'play'"
+                         title="Reproducir audio"
+                        (click)="togglePlayVoiceover(dataItem)">
+                </button>
+                <button class="btn-grid btn-sm video-button" kendoButton
+                         icon='reset'
+                         title="Reiniciar audio"
+                        (click)="resetAudio(dataItem)">
+                </button>
+                 <button (click)="downloadFile(dataItem.transcriptionId, dataItem.transcriptionPath)"
+                  *ngIf="dataItem.transcriptionPath" class="btn-grid btn-sm download-button" kendoButton
+                  title="Descargar transcripción">
+                  <img src="assets/img/microphone.png" width="16" height="16" class="icon-button">
+                </button>
+                <button (click)="downloadFile(dataItem.articleAnthropicId, dataItem.articleAnthropicPath)"
+                  *ngIf="dataItem.articleAnthropicPath" class="btn-grid btn-sm download-button" kendoButton
+                  icon="file-txt" title="Descargar artículo">
+                </button>
+                 <button (click)="ProcessAI(dataItem)"  *ngIf="audioIsEligibleForAI(dataItem)"
+                  [ngStyle]="{'background-color': dataItem.processAI ? 'DarkOrange' : ''}"
+                  [disabled]="dataItem.processAI" class="btn-grid btn-sm download-button" kendoButton
+                  title="Procesar con IA">
+                  <img src="assets/img/bot.png" width="21" height="20" class="icon-button">
+                </button>
+              </ng-template>
+             </kendo-grid-column>
+            <ng-template kendoGridNoRecordsTemplate>
+              {{ loading ? msgNoRecords : msgLoading }}
+            </ng-template>
+          </kendo-grid>
+        </form>
+      </div>
+    </kendo-splitter-pane>
+
+    <kendo-splitter-pane>
+      <app-video-player [selectedMediaItem]="selectedMediaItem" [user]="user" [showYoutubeSection]="showYoutubeSection"
+        [voiceover]="voiceover" [mediaDetails]="mediaDetails" (videoLoaded)="onVideoLoaded($event)"
+        (cutsGenerated)="onCutsGenerated($event)" (mediaItemChanged)="onMediaItemChanged($event)">
+      </app-video-player>
+    </kendo-splitter-pane>
+  </kendo-splitter>
+
+  <kendo-dialog title="Confirmación requerida" *ngIf="confirmOpened" (close)="btn_confirmCancel()" [minWidth]="300"
+    [width]="dialogWidth">
+    <p style="margin: 30px; text-align: center;">
+      {{ confirmMessage }}
+    </p>
+    <kendo-dialog-actions>
+      <button kendoButton (click)="btn_confirmOk()" [primary]="true">
+        Aceptar
+      </button>
+      <button kendoButton (click)="btn_confirmCancel()">Cancelar</button>
+    </kendo-dialog-actions>
+  </kendo-dialog>
+</div>
+
+<div *ngIf="isLoggedIn && !canAccessBetty" class="alert alert-danger" role="alert">
+  <h4 class="alert-heading">Acceso Denegado</h4>
+  <p>No tienes los permisos necesarios para acceder a esta página.</p>
+  <p>Solo los usuarios con rol de administrador o usuario pueden ver el material disponible.</p>
+</div>
+
+<ng-template #loggedOut>
+  Please login.
+</ng-template>
