@@ -152,10 +152,11 @@
             </kendo-grid-column>
              <kendo-grid-column title="" [width]="135" media="sm" [hidden]="!voiceover">
               <ng-template kendoGridCellTemplate let-dataItem>
-                <button class="btn-grid btn-sm video-button" kendoButton
-                         [icon]="dataItem.isPlaying ? 'pause' : 'play'"
-                         title="Reproducir audio"
-                        (click)="togglePlayVoiceover(dataItem)">
+                 <button class="btn-grid btn-sm video-button" kendoButton 
+                  [icon]="loadingAudioIds.has(dataItem.id) ? 'loading' : (dataItem.isPlaying ? 'pause' : 'play')"
+                  [disabled]="loadingAudioIds.has(dataItem.id)"
+                  title="Reproducir audio" 
+                  (click)="togglePlayVoiceover(dataItem)">
                 </button>
                 <button class="btn-grid btn-sm video-button" kendoButton
                          icon='reset'

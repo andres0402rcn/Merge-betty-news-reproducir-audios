@@ -1,0 +1,282 @@
+<div class="pane-content" style="padding: 20px;" #videoContainer>
+  <h6>{{ videoName }}</h6>
+  <div class="row video-container">
+    <div class="video-info-bar">
+      <div class="info-item fps">
+        <span>FPS:</span> <strong>{{ fps }}</strong>
+      </div>
+      <div class="info-item duration">
+        <span>Duración:</span> <strong>{{ totalDuration }}</strong>
+      </div>
+      <div class="info-item timecode">
+        <span>Time Code:</span> <strong>{{ currentTimecode }}</strong>
+      </div>
+      <div class="info-item frame">
+        <span>Frame:</span> <strong>{{ currentFrame }}</strong>
+      </div>
+      <div class="info-item percent">
+        <span>Reprod.:</span> <strong>{{ playbackPercent }} %</strong>
+      </div>
+    </div>
+
+    <video id="videoPlayer" #videoPlayer oncontextmenu="return false;" [style.height.px]="videoHeight"
+      style="width: 100%; max-height: 600px; border-radius: 8px;" (timeupdate)="onTimeUpdate()">
+      <source #sourceVideo type="video/mp4">
+      No se pudo reproducir el video
+    </video>
+  </div>
+
+  <div class="progress-container" (click)="seek($event)">
+    <kendo-progressbar [value]="videoProgress" [label]="progressLabelSettings" style="width: 100%;">
+    </kendo-progressbar>
+    <ng-container *ngIf="cutStart !== null && !activeCut">
+      <div class="cut-marker start-marker" [style.left.%]="getCutLeft(cutStart)"></div>
+      <div *ngIf="cutEnd !== null">
+        <div class="cut-overlay" [style.left.%]="getCutLeft(cutStart)" [style.width.%]="getCutWidth(cutStart, cutEnd)">
+        </div>
+        <div class="cut-marker end-marker" [style.left.%]="getCutLeft(cutEnd)"></div>
+      </div>
+    </ng-container>
+    <ng-container *ngIf="activeCut">
+      <div class="cut-marker start-marker" [style.left.%]="getCutLeft(activeCut.start)"></div>
+      <div class="cut-overlay" [style.left.%]="getCutLeft(activeCut.start)"
+        [style.width.%]="getCutWidth(activeCut.start, activeCut.end)">
+      </div>
+      <div class="cut-marker end-marker" [style.left.%]="getCutLeft(activeCut.end)"></div>
+    </ng-container>
+  </div>
+
+  <div class="row-buttons">
+    <button kendoButton [icon]="iconPlayPause" (click)="playPause()" class="video-button"
+      [title]="titlePlayPause"></button>
+    <button kendoButton icon="rewind" (click)="videoFastBackward()" class="video-button"
+      title="Retroceder rápido"></button>
+    <button kendoButton icon="caret-alt-to-left" (click)="seekBackward()" class="video-button"
+      title="Atrasar N frames"></button>
+    <button kendoButton icon="caret-alt-to-right" (click)="seekForward()" class="video-button"
+      title="Adelantar N frames"></button>
+    <button kendoButton icon="forward" (click)="videoFastForward()" class="video-button"
+      title="Avanzar rápido"></button>
+    <button kendoButton icon="reset" (click)="restart()" class="video-button" title="Reiniciar"></button>
+    <button kendoButton [icon]="iconMuteUnmute" (click)="muteUnmute()" class="video-button"
+      title="Silenciar/Activar sonido"></button>
+    <button kendoButton icon="arrow-down" (click)="markCutStart()" class="cut-button-start"
+      title="Marcar punto inicio"></button>
+    <button kendoButton icon="arrow-down" (click)="markCutEnd()" class="cut-button-end"
+      title="Marcar punto fin"></button>
+    <button *ngIf="cuts.length > 0" kendoButton class="btn-grid btn-sm action-button" icon="media-manager"
+      (click)="toggleCutsSequence()" title="Reproducir secuencia de cortes">
+    </button>
+  </div>
+  <div class="controls">
+    <div class="btn-group">
+      <button *ngFor="let val of [1,10,20,50,100]" (click)="setStep(val)" [class.active]="stepFrames === val"
+        class="btn">
+        {{val}}
+      </button>
+    </div>
+  </div><br>
+
+  <div *ngIf="cuts.length > 0" (dragover)="onDragOver($event)" (drop)="onDropToListView($event)" class="drop-zone"
+    [class.drop-zone-active]="isDragOver">
+    <kendo-grid [data]="cutsGridData" [rowReorderable]="true" [resizable]="true" (rowReorder)="onRowReorder($event)"
+      [trackBy]="trackByFn">
+      <kendo-grid-rowreorder-column [width]="40"></kendo-grid-rowreorder-column>
+      <kendo-grid-column field="order" title="#" [width]="40">
+        <ng-template kendoGridCellTemplate let-dataItem let-rowIndex="rowIndex">
+          {{ rowIndex + 1 }}
+        </ng-template>
+      </kendo-grid-column>
+      <kendo-grid-column field="start" title="Punto In" media="sm"></kendo-grid-column>
+      <kendo-grid-column field="end" title="Punto Out" media="sm"></kendo-grid-column>
+      <kendo-grid-column field="duration" title="Duración" media="sm"></kendo-grid-column>
+      <kendo-grid-column title="Acciones" media="sm" [width]="120">
+        <ng-template kendoGridCellTemplate let-dataItem let-rowIndex="rowIndex">
+          <div class="action-buttons">
+            <button kendoButton [icon]="activeCutIndex === rowIndex ? activeCutIcon : 'video-external'"
+              class="btn-grid btn-sm video-button" [ngClass]="{'btn-playing': activeCutIndex === rowIndex}"
+              (click)="playSegment(rowIndex)" title="Reproducir segmento">
+            </button>
+            <button kendoButton icon="trash" class="btn-grid btn-sm download-button" (click)="deleteSegment(rowIndex)"
+              title="Eliminar segmento">
+            </button>
+          </div>
+        </ng-template>
+      </kendo-grid-column>
+      <kendo-grid-column field="transition" title="Transición" media="sm" [width]="100">
+        <ng-template kendoGridCellTemplate let-dataItem let-rowIndex="rowIndex">
+          <div style="text-align: center;">
+            <input type="checkbox" [checked]="dataItem.transition === true"
+              (change)="onTransitionChange(rowIndex, $event)">
+          </div>
+        </ng-template>
+      </kendo-grid-column>
+      <kendo-grid-column field="transition" title="Voice-over" media="sm" [style]="{'text-align': 'center'}"
+        [hidden]="!voiceover && voiceoverFiles.length === 0">
+        <ng-template kendoGridCellTemplate let-dataItem let-rowIndex="rowIndex">
+          <kendo-switch #switch [(ngModel)]="dataItem.active" (valueChange)="onVoiceOverSwitchChange(dataItem, $event)"
+            for="small"></kendo-switch>
+        </ng-template>
+      </kendo-grid-column>
+      <kendo-grid-column title="Orden" [width]="88">
+        <ng-template kendoGridCellTemplate let-dataItem let-rowIndex="rowIndex">
+          <button kendoButton look="flat" icon="arrow-up" (click)="moveCutUp(rowIndex)" [disabled]="rowIndex === 0">
+          </button>
+          <button kendoButton look="flat" icon="arrow-down" (click)="moveCutDown(rowIndex)"
+            [disabled]="rowIndex === cuts.length - 1">
+          </button>
+        </ng-template>
+      </kendo-grid-column>
+    </kendo-grid>
+    <div *ngIf="voiceover && voiceoverFiles.length === 0" class="voice-drag-label-container">
+      <label class="voice-drag-label">Suelte aquí el archivo de voz</label>
+    </div>
+    <div *ngIf="voiceoverFiles.length > 0" class="voice-file-added-container">
+      <b>Archivo de voz agregado:</b>
+      <kendo-listview class="demo-listview" [data]="voiceoverFiles" [itemClass]="{ 'item-border': true }"
+        data-kendo-listview-index="0">
+        <ng-template kendoListViewItemTemplate let-dataItem="dataItem">
+          <div class="voiceover-file-row" style="width: 100%; display: flex; align-items: center; gap: 10px;">
+            <div style="flex: 1; min-width: 0;">
+              <span style="vertical-align: middle; margin-left: 5px;">{{ dataItem.title }}</span>
+            </div>
+            <div style="flex: 0 0 auto; white-space: nowrap;">
+              <span style="vertical-align: middle;">Duración: {{ formatDuration(dataItem.durationSeconds) }}</span>
+            </div>
+            <div class="d-flex" style="gap: 5px; flex: 0 0 auto;">
+              <button class="btn-grid btn-sm video-button" kendoButton 
+                [icon]="loadingAudioIds.has(dataItem.id) ? 'loading' : (dataItem.isPlaying ? 'pause' : 'play')"
+                [disabled]="loadingAudioIds.has(dataItem.id)"
+                title="Reproducir audio" 
+                (click)="togglePlayVoiceover(dataItem)">
+              </button>
+              <button class="btn-grid btn-sm video-button" kendoButton icon='reset' title="Reiniciar audio"
+                (click)="resetAudio(dataItem)">
+              </button>
+              <button class="btn-grid btn-sm download-button" kendoButton icon="delete"
+                (click)="removeFromSelected(dataItem)">
+              </button>
+            </div>
+          </div>
+        </ng-template>
+      </kendo-listview>
+    </div><br>
+
+    <div *ngIf="cuts.length > 0">
+      Cantidad de clips: {{ getEdlSummary().countClips }}<br>
+      Duración del EDL (Segundos → {{ getEdlSummary().durationSeconds }} -
+      Cuadros → {{ getEdlSummary().durationFrames }})
+    </div>
+
+    <div *ngIf="cuts.length > 0" class="video-option-form-container">
+      <div class="form-fields-grid">
+        <div class="form-two-columns">
+          <div class="form-field-group">
+            <label class="form-field-label">Tipo de corte *</label>
+            <kendo-dropdownlist [data]="typeCutOptions" [(ngModel)]="selectedTypeCut" textField="text"
+              valueField="value" [valuePrimitive]="true" (valueChange)="onTypeCutChange()" class="form-combobox">
+            </kendo-dropdownlist>
+          </div>
+          <div class="form-field-group" *ngIf="selectedTypeCut && shouldShowGraphicImage()">
+            <label class="form-field-label">Imagen gráfica *</label>
+            <kendo-dropdownlist [data]="filteredGraphicImageOptions" [(ngModel)]="selectedGraphicImage" textField="text"
+              valueField="value" [valuePrimitive]="true" class="form-combobox">
+            </kendo-dropdownlist>
+          </div>
+        </div>
+        <div class="form-required-note">
+          * Tipo de corte es obligatorio<span *ngIf="shouldShowGraphicImage()">, imagen gráfica es
+            obligatoria</span>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="cuts.length > 0 && showYoutubeSection" class="video-option-form-container">
+      <div class="video-option-checkbox-container">
+        <label class="video-option-checkbox-label">
+          <input type="checkbox" [(ngModel)]="publishToYoutube" (change)="onPublishToYoutubeChange()"
+            class="video-option-checkbox">
+          <strong>Publicar en YouTube</strong>
+        </label>
+      </div>
+      <div *ngIf="publishToYoutube" class="form-fields-grid">
+        <div class="form-field-group">
+          <label class="form-field-label">Nombre del video *</label>
+          <input type="text" [(ngModel)]="youtubeVideoName" placeholder="Ingrese el nombre del video" class="form-input"
+            maxlength="100">
+        </div>
+        <div class="form-two-columns">
+          <div class="form-field-group">
+            <label class="form-field-label">Cuenta *</label>
+            <kendo-dropdownlist [data]="youtubeAccounts" [(ngModel)]="youtubeAccount" textField="text"
+              valueField="value" [valuePrimitive]="true" placeholder="Seleccionar cuenta..." class="form-combobox">
+            </kendo-dropdownlist>
+          </div>
+          <div class="form-field-group">
+            <label class="form-field-label">Visibilidad *</label>
+            <kendo-dropdownlist [data]="youtubeVisibilityOptions" [(ngModel)]="youtubeVisibility" textField="text"
+              valueField="value" [valuePrimitive]="true" placeholder="Seleccionar visibilidad..." class="form-combobox">
+            </kendo-dropdownlist>
+          </div>
+        </div>
+        <div class="form-field-group">
+          <label class="form-field-label">Palabras clave *</label>
+          <input type="text" [(ngModel)]="youtubeKeywords" placeholder="Ej: video,noticias,actualidad"
+            class="form-input" maxlength="500">
+          <small style="color: #666; font-size: 11px; margin-top: 2px; display: block;">
+            Separe las palabras clave con comas. Máximo 500 caracteres.
+          </small>
+        </div>
+        <div class="form-field-group">
+          <label class="form-field-label">Descripción *</label>
+          <textarea [(ngModel)]="youtubeDescription" placeholder="Ingrese la descripción del video" rows="4"
+            maxlength="5000" class="form-textarea">
+          </textarea>
+        </div>
+        <div class="form-required-note">
+          * Todos los campos son obligatorios para publicar en YouTube
+        </div>
+      </div>
+    </div>
+
+    <button kendoButton (click)="saveCuts()">Enviar cortes</button>
+  </div>
+
+  <kendo-dialog title="Procesamiento de cortes" *ngIf="progressDialogOpened" (close)="closeProgressDialog()"
+    [minWidth]="300" [width]="350">
+    <div style="padding: 10px; text-align: center;">
+      <div *ngIf="!isProcessingComplete">
+        <kendo-progressbar [value]="progressPercentage">
+        </kendo-progressbar>
+        <p style="margin-top: 15px; font-size: 14px;">{{ progressMessage }}</p>
+        <div style="margin-top: 5px;">
+          <span class="k-icon k-i-loading" style="animation: k-icon-spin 1s linear infinite;"></span>
+          <span style="margin-left: 5px; font-size: 12px; color: #666;">Procesando...</span>
+        </div>
+      </div>
+      <div *ngIf="isProcessingComplete">
+        <div *ngIf="processingError" style="color: #d9534f;">
+          <span class="k-icon k-i-cancel" style="font-size: 48px; color: #d9534f; margin-bottom: 5px;"></span>
+          <h4 style="margin-bottom: 5px;">Error en el procesamiento</h4>
+          <p style="font-size: 14px;">{{ progressMessage }}</p>
+        </div>
+        <div *ngIf="!processingError" style="color: #5cb85c;">
+          <span class="k-icon k-i-check" style="font-size: 48px; color: #5cb85c; margin-bottom: 5px;"></span>
+          <h4 style="margin-bottom: 5px;">{{ progressMessage }}</h4>
+          <div *ngIf="clipUrl" style="margin-bottom: 10px;">
+            <p style="font-size: 14px; margin-bottom: 5px;">Para visualizar o descargar su clip, haga clic aquí:</p>
+            <button kendoButton (click)="openClipUrl()" [primary]="true" icon="eye">
+              Ver Clip
+            </button>
+          </div>
+          <div *ngIf="youtubeUrl" style="margin-bottom: 5px;">
+            <p style="font-size: 14px; margin-bottom: 5px;">Su video fue publicado exitosamente en YouTube:</p>
+            <button kendoButton (click)="openYoutubeUrl()" themeColor="secondary" icon="hyperlink-open">
+              Ver en YouTube
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </kendo-dialog>
+</div>

@@ -64,8 +64,8 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
 
   public voiceover: boolean = false;
   private blobUrl: string = '';
-  public voiceoverFiles: any[] = [];
   private currentAudioFileId: number | null = null;
+  public loadingAudioIds: Set<number> = new Set();
 
   public confirmAction: ConfirmActionType = ConfirmActionType.None;
   public confirmPayload: any = null;
@@ -78,11 +78,14 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
   @ViewChild("comboSource") comboSource: ComboBoxComponent;
   @ViewChild('dateFromPicker', { static: false }) dateFromPicker!: DatePickerComponent;
   @ViewChild('dateToPicker', { static: false }) dateToPicker!: DatePickerComponent;
-  @ViewChild('audioPlayer', { static: false }) audioPlayer: ElementRef;
 
   public interval: any;
   public mediaDetailsSubscription: Subscription;
   public mediaDetailAudioSubscription: Subscription;
+  public audioStateSubscription: Subscription;
+
+  private audioEl = this.mediaDetailService.getAudioElement();
+
 
   constructor(
     private mediaDetailService: MediaDetailService,
@@ -99,6 +102,9 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
       this.showAdminMenu = this.user.roles.includes('ROLE_ADMIN');
       this.canAccessBetty = this.user.roles.includes('ROLE_ADMIN') || this.user.roles.includes('ROLE_USER');
       this.showYoutubeSection = this.user.roles.includes('ROLE_ADMIN') || this.user.roles.includes('ROLE_YOUTUBE');
+      this.audioStateSubscription = this.mediaDetailService.audioState$.subscribe(state => {
+        this.updateGridAudioStatus(state.id, state.isPlaying, state.isReset || false);
+      });
       this.state = {
         skip: 0,
         take: 100,
@@ -138,7 +144,7 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
     if (this.interval) clearInterval(this.interval);
     if (this.mediaDetailsSubscription) this.mediaDetailsSubscription.unsubscribe();
     if (this.mediaDetailAudioSubscription) this.mediaDetailAudioSubscription.unsubscribe();
-
+    if (this.audioStateSubscription) this.audioStateSubscription.unsubscribe();
     if (this.blobUrl) {
       URL.revokeObjectURL(this.blobUrl);
     }
@@ -697,11 +703,6 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
     };
   };
 
-  public filterVoiceoverFiles: DropDownFilterSettings = {
-    caseSensitive: false,
-    operator: "contains",
-  };  
-
     // lógica del componente Drag & Drop Grid - ListView...
     // Item siendo arrastrado
     // Datos del ListView (productos seleccionados)
@@ -762,7 +763,7 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
           value: source
         }));
 
-        if (this.currentAudioFileId && !this.audioPlayer.nativeElement.paused) {
+        if (this.currentAudioFileId) {
           // Buscar el ítem en la nueva lista cargada que coincida con el ID actual
           const currentItem = this.gridData.data.find((item: any) => item.id === this.currentAudioFileId);
           
@@ -779,72 +780,83 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
           document.body.style.cursor = 'default';
         }
       })
+
+      this.mediaDetailService.notifyAudioState(this.currentAudioFileId, false, true);
     
     }
 
     filterVideoFiles(): void {
-      const audioEl = this.audioPlayer.nativeElement;
-      if (this.voiceover){
-        // Pausar solo si el archivo actual NO está en voiceoverFiles
-        const isPlayingInVoiceover = this.voiceoverFiles.some(f => f.id === this.currentAudioFileId);
-        
-        if (!isPlayingInVoiceover) {
-          try {
-            audioEl.pause();
-          } catch (err) {
-            console.log(err);
+      if (this.voiceover) {
+        // 1. Actualizar ícono directamente antes de recargar el grid
+        if (this.currentAudioFileId) {
+          const playingItem = this.gridData?.data?.find(
+            (f: any) => f.id === this.currentAudioFileId
+          );
+          if (playingItem) {
+            playingItem.isPlaying = false;
           }
         }
+
+        // 2. Pausar y notificar
+        try {
+          this.audioEl.pause();
+          if (this.currentAudioFileId) {
+            this.mediaDetailService.notifyAudioState(this.currentAudioFileId, false, true);
+          }
+        } catch (err) {
+          console.log(err);
+        }
+
         this.voiceover = false;
         this.loadData();
       }
     }
 
-     togglePlayVoiceover(dataItem: any) {
-    const audioEl = this.audioPlayer.nativeElement;
+   togglePlayVoiceover(dataItem: any, isResetAction: boolean = false) {
+    const audioEl = this.audioEl;
     const fileId = dataItem.id;
 
-    // Helper para sincronizar isPlaying en ambas listas por id
+    const notifyGlobal = (id: number, value: boolean, isReset: boolean) => {
+        this.mediaDetailService.notifyAudioState(id, value, isReset);
+    };
+
     const syncIsPlaying = (id: number, value: boolean) => {
-      if (this.gridData?.data && Array.isArray(this.gridData.data)) {
+      if (this.gridData && Array.isArray(this.gridData.data)) {
         const item = this.gridData.data.find(f => f.id === id);
-        if (item) item.isPlaying = value;
-      }
-      if (this.voiceoverFiles && Array.isArray(this.voiceoverFiles)) {
-        const item = this.voiceoverFiles.find(f => f.id === id);
-        if (item) item.isPlaying = value;
+        if (item) {
+          item.isPlaying = value;
+        }
       }
     };
 
-    // Helper para pausar todos
     const pauseAll = () => {
-      if (this.gridData?.data && Array.isArray(this.gridData.data)) {
+      if (this.gridData && Array.isArray(this.gridData.data)) {
         this.gridData.data.forEach(f => f.isPlaying = false);
       }
-      if (this.voiceoverFiles && Array.isArray(this.voiceoverFiles)) {
-        this.voiceoverFiles.forEach(f => f.isPlaying = false);
-      }
+      notifyGlobal(this.currentAudioFileId, false, false);
     };
 
-    // Si está reproduciendo este archivo → pausar
     if (dataItem.isPlaying) {
       audioEl.pause();
       syncIsPlaying(fileId, false);
+      notifyGlobal(fileId, false, false);
       return;
     }
 
-    // Si es el mismo archivo pausado → reanudar sin recargar
-    if (this.currentAudioFileId === fileId && audioEl.src) {
+    const globalState = this.mediaDetailService.getCurrentAudioState();
+    if (globalState.id === fileId && audioEl.src) {
+      this.currentAudioFileId = fileId;
       audioEl.play().then(() => {
         syncIsPlaying(fileId, true);
+        notifyGlobal(fileId, true, false);
       }).catch((error) => {
         console.error('Error al reproducir el audio:', error);
         syncIsPlaying(fileId, false);
+        notifyGlobal(fileId, false, false);
       });
       return;
     }
 
-    // Nuevo archivo → pausar todo y cargar
     pauseAll();
 
     try {
@@ -853,60 +865,109 @@ export class MediaDetailsComponent implements OnInit, OnDestroy {
       console.error('Error al pausar el audio:', e);
     }
 
+    this.loadingAudioIds.add(fileId);
+
     this.mediaDetailService.getAudioFile(fileId).subscribe({
       next: (blob) => {
-        //Revocar el último blob para liberar memoria
+        const newBlobUrl = URL.createObjectURL(blob);
+        
+        
         if (this.blobUrl) {
           URL.revokeObjectURL(this.blobUrl);
         }
+        this.blobUrl = newBlobUrl;
 
-        this.blobUrl = URL.createObjectURL(blob);
-        audioEl.src = this.blobUrl;
+        audioEl.src = newBlobUrl;
+        audioEl.load();
         this.currentAudioFileId = fileId;
+
+        this.loadingAudioIds.delete(fileId);
 
         audioEl.play().then(() => {
           syncIsPlaying(fileId, true);
+          notifyGlobal(fileId, true, isResetAction);
         }).catch((error) => {
           alert('Error al reproducir el audio: ' + error);
           syncIsPlaying(fileId, false);
+          notifyGlobal(fileId, false, false);
         });
       },
       error: (err) => {
+        this.loadingAudioIds.delete(fileId);
         alert('Error al reproducir el audio: ' + err.message);
         syncIsPlaying(fileId, false);
+        notifyGlobal(fileId, false, false);
       }
     });
   }
 
   resetAudio(dataItem: any) {
-    const audioEl = this.audioPlayer.nativeElement;
+   this.audioEl.currentTime = 0;
 
     if (dataItem.id !== this.currentAudioFileId) {
-      if (this.gridData?.data && Array.isArray(this.gridData.data)) {
-        this.gridData.data.forEach(f => f.isPlaying = false);
-      }
-      if (this.voiceoverFiles && Array.isArray(this.voiceoverFiles)) {
-        this.voiceoverFiles.forEach(f => f.isPlaying = false);
-      }
-      this.togglePlayVoiceover(dataItem);
+      
+      const dataList = this.gridData?.data; 
+      if (dataList) { dataList.forEach(f => f.isPlaying = false); }
+
+      this.togglePlayVoiceover(dataItem, true); // <--- Pasamos true indicando que es forzado reset
       return;
     }
 
-    audioEl.currentTime = 0;
-    if (!dataItem.isPlaying) {
-      audioEl.play().then(() => {
-        // Sincronizar ambas listas
-        if (this.gridData?.data && Array.isArray(this.gridData.data)) {
-          const item = this.gridData.data.find(f => f.id === dataItem.id);
-          if (item) item.isPlaying = true;
+        const dataList = this.gridData?.data;
+        if (dataList) {
+             const item = dataList.find(f => f.id === dataItem.id);
+             if (item) item.isPlaying = true;
         }
-        if (this.voiceoverFiles && Array.isArray(this.voiceoverFiles)) {
-          const item = this.voiceoverFiles.find(f => f.id === dataItem.id);
-          if (item) item.isPlaying = true;
-        }
-      }).catch((error) => {
-        alert('Error al reproducir el audio: ' + error);
-      });
-    }
+
+        this.mediaDetailService.notifyAudioState(dataItem.id, true, true);
   }
+
+  updateGridAudioStatus(id: number, isPlaying: boolean, isReset: boolean = false) {
+    const audioEl = this.audioEl;
+    const dataList = this.gridData?.data; 
+    if (!dataList) return;
+
+    // Resetear visualmente todos los demás a pausa si se está reproduciendo uno nuevo
+    if (isPlaying) {
+        dataList.forEach(item => item.isPlaying = false);
+    }
+
+    // Encontrar el registro específico
+    const item = dataList.find(f => f.id === id);
+    
+    if (item) {
+        // Lógica de control del Audio Element nativo LOCAL
+
+        if (this.currentAudioFileId === id) {
+            
+            if (isPlaying) {
+                // Es un REINICIO
+                if (isReset) {
+                    audioEl.currentTime = 0; // <--- LA CLAVE DEL REINICIO
+                    if (audioEl.paused) {
+                        audioEl.play().catch(e => console.error("Error auto-play on reset:", e));
+                    }
+                } 
+                // Es un PLAY normal (reanudar)
+                else {
+                    if (audioEl.paused) {
+                        audioEl.play().catch(e => console.error("Error auto-play on sync:", e));
+                    }
+                }
+            } else {
+                // Es una PAUSA
+                if (!audioEl.paused) {
+                    audioEl.pause();
+                }
+            }
+        } else {
+            if (isPlaying && !audioEl.paused) {
+                 audioEl.pause();
+            }
+        }
+
+        // Actualizar estado visual (Icono)
+        item.isPlaying = isPlaying;
+    }
+}
 }
